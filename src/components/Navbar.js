@@ -1,13 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { AuthContext } from "../features/auth/AuthContext";
 import "./Navbar.css";
 
 function Navbar() {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
-  const genres = ["All", "Action", "Sci-Fi", "Crime", "Drama", "Thriller"];
+  const genres = ["Action", "Sci-Fi", "Crime", "Drama", "Thriller"];
 
   const handleGenreClick = (genre) => {
     setOpen(false);
@@ -20,6 +22,11 @@ function Navbar() {
 
     navigate(`/search/${searchTerm}`);
     setSearchTerm("");
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
   };
 
   return (
@@ -67,8 +74,18 @@ function Navbar() {
         </div>
 
         <Link to="/">Home</Link>
-        <Link to="/login">Login</Link>
-        <Link to="/register">Register</Link>
+
+        {user ? (
+          <>
+            <span className="user-name">Hi, {user.name}</span>
+            <button className="logout-btn" onClick={handleLogout}>Logout</button>
+          </>
+        ) : (
+          <>
+            <Link to="/login">Login</Link>
+            <Link to="/register">Register</Link>
+          </>
+        )}
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import "./App.css";
 import Navbar from "./components/Navbar";
 import MovieDetails from "./features/movies/components/MovieDetails";
 import Watch from "./features/movies/components/Watch";
+import Series from "./features/movies/components/Series";
 import Genres from "./features/movies/components/Genres";
 import Search from "./features/movies/components/Search";
 
