@@ -31,3 +31,4 @@ backend/*.log
 
 create_db.js
 init_db.js
+ignore/*

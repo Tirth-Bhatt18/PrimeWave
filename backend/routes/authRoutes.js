@@ -3,7 +3,36 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
-require('dotenv').config();
+
+const mapDbErrorToResponse = (err) => {
+    switch (err.code) {
+        case '3D000':
+            return {
+                status: 500,
+                message: 'Database does not exist. Create the primewave database and initialize tables.'
+            };
+        case '42P01':
+            return {
+                status: 500,
+                message: 'Required database tables are missing. Initialize users/admins tables.'
+            };
+        case '28P01':
+            return {
+                status: 500,
+                message: 'Database authentication failed. Verify DATABASE_URL credentials.'
+            };
+        case 'ECONNREFUSED':
+            return {
+                status: 503,
+                message: 'Database service is unreachable. Ensure PostgreSQL is running.'
+            };
+        default:
+            return {
+                status: 500,
+                message: 'Server error during login'
+            };
+    }
+};
 
 // POST /api/auth/register (user)
 router.post('/register', async (req, res) => {
@@ -104,6 +133,10 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ message: 'Invalid Credentials' });
         }
 
+        if (typeof person.password !== 'string' || person.password.length === 0) {
+            return res.status(500).json({ message: 'Account record is invalid. Please contact support.' });
+        }
+
         // Compare password
         const isMatch = await bcrypt.compare(password, person.password);
         if (!isMatch) {
@@ -134,7 +167,8 @@ router.post('/login', async (req, res) => {
 
     } catch (err) {
         console.error(err);
-        res.status(500).json({ message: 'Server error during login' });
+        const mapped = mapDbErrorToResponse(err);
+        res.status(mapped.status).json({ message: mapped.message });
     }
 });
 
