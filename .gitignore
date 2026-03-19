@@ -24,3 +24,11 @@ backend/.env
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+backend/*.log
+
+*.patch
+*.sql
+
+create_db.js
+init_db.js
+ignore/*
