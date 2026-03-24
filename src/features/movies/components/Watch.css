@@ -19,14 +19,62 @@
   margin-bottom: 20px;
 }
 
+.watch-actions {
+  margin-bottom: 16px;
+}
+
+.play-now-btn {
+  background: #e50914;
+  border: none;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.play-now-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.series-controls {
+  margin-bottom: 18px;
+}
+
+.season-list,
+.episode-list {
+  margin-bottom: 12px;
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pill-btn {
+  background: #1f1f1f;
+  border: 1px solid #3a3a3a;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.pill-btn-active {
+  background: #e50914;
+  border-color: #e50914;
+}
+
 .video-container {
   width: 100%;
   display: flex;
   justify-content: center;
 }
 
-video {
-  width: 80%;
+.video-container video {
+  width: 100%;
   max-height: 80vh;
   border-radius: 10px;
 }

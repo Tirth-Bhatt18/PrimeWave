@@ -6,9 +6,14 @@
     "scripts": {
         "start": "node app.js",
         "dev": "nodemon app.js",
-        "db:init": "node scripts/init-db.js"
+        "db:init": "node scripts/init-db.js",
+        "db:seed-s3": "node scripts/seedS3ContentMetadata.js",
+        "verify:video-routes": "node scripts/testVideoRoutes.js",
+        "verify:s3": "node scripts/testS3KeyCandidates.js"
     },
     "dependencies": {
+        "@aws-sdk/client-s3": "^3.1011.0",
+        "@aws-sdk/s3-request-presigner": "^3.1011.0",
         "bcryptjs": "^2.4.3",
         "cors": "^2.8.5",
         "dotenv": "^16.3.1",

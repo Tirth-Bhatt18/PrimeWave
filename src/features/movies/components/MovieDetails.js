@@ -31,7 +31,7 @@ function MovieDetails() {
             className="play-btn"
             onClick={() => navigate(`/watch/${item.id}`)}
           >
-            ▶ Play
+            {item.seasons ? "▶ View Episodes" : "▶ Play Now"}
           </button>
         </div>
       </div>
