@@ -1,39 +1,121 @@
 .details-page {
-  background: #141414;
+  background: var(--bg-dark);
   min-height: 100vh;
-  padding: 40px;
+  color: var(--text-main);
+  position: relative;
+}
+
+.hero-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 90vh;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 20%;
+}
+
+.hero-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to right, rgba(10,10,14,1) 15%, rgba(10,10,14,0.5) 50%, transparent 100%),
+    linear-gradient(to top, rgba(10,10,14,1) 0%, transparent 30%);
+}
+
+.back-btn-top {
+  position: absolute;
+  top: 80px;
+  left: 40px;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.2);
   color: white;
-}
-
-.details-container {
-  display: flex;
-  gap: 40px;
-}
-
-.details-container img {
-  width: 300px;
-  border-radius: 10px;
-}
-
-.details-info {
-  max-width: 600px;
-}
-
-.details-info h1 {
-  margin-bottom: 10px;
-}
-
-.play-btn {
-  margin-top: 20px;
-  background: #e50914;
-  border: none;
-  padding: 12px 20px;
-  color: white;
-  font-size: 16px;
-  border-radius: 6px;
+  padding: 10px 20px;
+  border-radius: 8px;
   cursor: pointer;
+  z-index: 50;
+  font-weight: 600;
+  transition: all 0.3s ease;
 }
 
-.play-btn:hover {
-  background: #ff1c1c;
+.back-btn-top:hover {
+  background: white;
+  color: black;
+}
+
+.details-content {
+  position: relative;
+  z-index: 10;
+  padding: 200px 60px 60px 60px;
+  max-width: 860px;
+}
+
+.details-content h1 {
+  font-size: 64px;
+  font-weight: 800;
+  margin-bottom: 20px;
+  line-height: 1.1;
+  text-shadow: 0 4px 20px rgba(0,0,0,0.8);
+  font-family: var(--font-heading);
+}
+
+.meta-row {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  flex-wrap: wrap;
+}
+
+.match-score { color: #46d369; }
+
+.maturity-rating,
+.hd-badge {
+  border: 1px solid rgba(255,255,255,0.6);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.play-main-btn {
+  background: white;
+  color: black;
+  border: none;
+  padding: 14px 36px;
+  font-size: 20px;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+  white-space: nowrap;
+}
+
+.play-main-btn:hover {
+  background: rgba(255,255,255,0.85);
+  transform: scale(1.03);
+}
+
+.details-desc {
+  font-size: 17px;
+  line-height: 1.6;
+  color: #e0e0e0;
+  max-width: 600px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  font-weight: 400;
+  margin-top: 8px;
 }

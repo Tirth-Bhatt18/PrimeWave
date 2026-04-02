@@ -36,7 +36,7 @@ const mapDbErrorToResponse = (err) => {
 
 // POST /api/auth/register (user)
 router.post('/register', async (req, res) => {
-    const { name, email, password, phone } = req.body;
+    const { name, email, password, phone, plan_id } = req.body;
 
     // Simple validation
     if (!name || !email || !password) {
@@ -59,6 +59,15 @@ router.post('/register', async (req, res) => {
             'INSERT INTO users (name, email, password, phone) VALUES ($1, $2, $3, $4) RETURNING user_id, name, email',
             [name, email, hashedPassword, phone]
         );
+
+        try {
+            await db.query(
+                `INSERT INTO user_subscriptions (user_id, plan_id) VALUES ($1, $2)`,
+                [newUser.rows[0].user_id, plan_id || 1]
+            );
+        } catch(e) {
+            console.error("Failed to add user subscription:", e.message);
+        }
 
         res.status(201).json({
             message: 'User registered successfully',
@@ -116,7 +125,12 @@ router.post('/login', async (req, res) => {
         let role = '';
 
         // Search in users table first
-        const userRes = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+        const userRes = await db.query(`
+            SELECT u.*, us.plan_id 
+            FROM users u 
+            LEFT JOIN user_subscriptions us ON u.user_id = us.user_id 
+            WHERE u.email = $1 LIMIT 1
+        `, [email]);
         if (userRes.rows.length > 0) {
             person = userRes.rows[0];
             role = 'user';
@@ -147,7 +161,8 @@ router.post('/login', async (req, res) => {
         const payload = {
             id: role === 'user' ? person.user_id : person.admin_id,
             email: person.email,
-            role: role
+            role: role,
+            plan_id: role === 'user' ? (person.plan_id || 1) : 999
         };
 
         const token = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -161,7 +176,8 @@ router.post('/login', async (req, res) => {
                 id: payload.id,
                 name: person.name,
                 email: person.email,
-                role: role
+                role: role,
+                plan_id: payload.plan_id
             }
         });
 

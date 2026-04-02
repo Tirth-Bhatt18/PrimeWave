@@ -1,117 +1,93 @@
-import React, { useRef } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { movies, series } from "../../../data/content";
+import api from "../../../config/api";
 
 function Home() {
   const navigate = useNavigate();
   const moviesRef = useRef(null);
   const seriesRef = useRef(null);
+  const continueRef = useRef(null);
+  const recoRef = useRef(null);
 
-  const scroll = (ref, direction) => {
+  const [movies, setMovies] = useState([]);
+  const [series, setSeries] = useState([]);
+  const [continueWatching, setContinueWatching] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) { navigate("/login"); return; }
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const fetchAll = async () => {
+      try {
+        const [catalog, cont, reco] = await Promise.all([
+          api.get("/videos/catalog/all", { headers }),
+          api.get("/library/continue", { headers }),
+          api.get("/user/recommendations", { headers }),
+        ]);
+        setMovies(catalog.data.movies || []);
+        setSeries(catalog.data.series || []);
+        setContinueWatching(cont.data || []);
+        setRecommendations(reco.data || []);
+      } catch (err) {
+        if (err.response?.status === 401) navigate("/login");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAll();
+  }, [navigate]);
+
+  const scroll = (ref, dir) => {
     if (!ref.current) return;
-    const amount = direction === "left" ? -600 : 600;
-    ref.current.scrollBy({ left: amount, behavior: "smooth" });
+    ref.current.scrollBy({ left: dir === "left" ? -600 : 600, behavior: "smooth" });
   };
 
-  const handleWatch = (item) => {
-  navigate(`/movie/${item.id}`);
-};
+  const handleClick = (item) => navigate(`/movie/${item.id}`);
+
+  const ContentRow = ({ items, rowRef, label }) => (
+    <>
+      <h2 className="section-title">{label}</h2>
+      <div className="row-wrapper">
+        <button className="scroll-btn scroll-left" onClick={() => scroll(rowRef, "left")}>◀</button>
+        <div className="movie-row" ref={rowRef}>
+          {items.map(item => (
+            <div key={item.id} className="movie-wrapper" onClick={() => handleClick(item)}>
+              <div className="movie-card">
+                <img src={item.image} alt={item.title} referrerPolicy="no-referrer" />
+                {item.progress_seconds > 0 && (
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: `${Math.min((item.progress_seconds / 7200) * 100, 100)}%` }}></div>
+                  </div>
+                )}
+                <div className="movie-overlay"><h3>{item.title}</h3></div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button className="scroll-btn scroll-right" onClick={() => scroll(rowRef, "right")}>▶</button>
+      </div>
+    </>
+  );
+
+  if (loading) return (
+    <div className="home" style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
+      <div className="spinner"></div>
+    </div>
+  );
 
   return (
     <div className="home">
-      {/* ================= MOVIES ================= */}
-      <h2 className="section-title">Movies</h2>
-
-      <div className="row-wrapper">
-        <button
-          className="scroll-btn scroll-left"
-          onClick={() => scroll(moviesRef, "left")}
-        >
-          ◀
-        </button>
-
-        <div className="movie-row" ref={moviesRef}>
-          {movies.map(movie => (
-            <div key={movie.id} className="movie-wrapper">
-              <div className="movie-card">
-                <img src={movie.image} alt={movie.title} />
-              </div>
-
-              <div className="movie-popup-card">
-                <img src={movie.image} alt={movie.title} />
-                <div className="popup-info">
-                  <h3>{movie.title}</h3>
-                  <p className="meta">
-                    {movie.year} • {movie.duration}
-                  </p>
-                  <p className="rating">⭐ {movie.rating}</p>
-                  <p className="desc">{movie.description}</p>
-                  <button
-                    className="watch-btn"
-                    onClick={() => handleWatch(movie)}
-                  >
-                    ▶ Watch Now
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <button
-          className="scroll-btn scroll-right"
-          onClick={() => scroll(moviesRef, "right")}
-        >
-          ▶
-        </button>
-      </div>
-
-      {/* ================= WEB SERIES ================= */}
-      <h2 className="section-title">Web Series</h2>
-
-      <div className="row-wrapper">
-        <button
-          className="scroll-btn scroll-left"
-          onClick={() => scroll(seriesRef, "left")}
-        >
-          ◀
-        </button>
-
-        <div className="movie-row" ref={seriesRef}>
-          {series.map(show => (
-            <div key={show.id} className="movie-wrapper">
-              <div className="movie-card">
-                <img src={show.image} alt={show.title} />
-              </div>
-
-              <div className="movie-popup-card">
-                <img src={show.image} alt={show.title} />
-                <div className="popup-info">
-                  <h3>{show.title}</h3>
-                  <p className="meta">
-                    {show.year} • {show.seasons}
-                  </p>
-                  <p className="rating">⭐ {show.rating}</p>
-                  <p className="desc">{show.description}</p>
-                  <button
-                    className="watch-btn"
-                    onClick={() => handleWatch(show)}
-                  >
-                    ▶ Watch Now
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <button
-          className="scroll-btn scroll-right"
-          onClick={() => scroll(seriesRef, "right")}
-        >
-          ▶
-        </button>
-      </div>
+      {continueWatching.length > 0 && (
+        <ContentRow items={continueWatching} rowRef={continueRef} label="Continue Watching" />
+      )}
+      {recommendations.length > 0 && (
+        <ContentRow items={recommendations} rowRef={recoRef} label="Recommended For You" />
+      )}
+      {movies.length > 0 && <ContentRow items={movies} rowRef={moviesRef} label="Movies" />}
+      {series.length > 0 && <ContentRow items={series} rowRef={seriesRef} label="Web Series" />}
     </div>
   );
 }

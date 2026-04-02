@@ -19,7 +19,6 @@ function Navbar() {
   const handleSearch = (e) => {
     e.preventDefault();
     if (!searchTerm.trim()) return;
-
     navigate(`/search/${searchTerm}`);
     setSearchTerm("");
   };
@@ -29,16 +28,15 @@ function Navbar() {
     navigate("/login");
   };
 
+  const isAdmin = user?.role === "admin";
+
   return (
     <div className="navbar">
-      {/* Logo */}
       <div className="logo" onClick={() => navigate("/")}>
         PrimeWave
       </div>
 
       <div className="nav-links">
-
-        {/* Search Bar */}
         <form onSubmit={handleSearch} className="search-form">
           <input
             type="text"
@@ -49,23 +47,14 @@ function Navbar() {
           />
         </form>
 
-        {/* Genre Dropdown */}
         <div className="genre-dropdown">
-          <button
-            className="genre-btn"
-            onClick={() => setOpen(!open)}
-          >
+          <button className="genre-btn" onClick={() => setOpen(!open)}>
             Genres ▾
           </button>
-
           {open && (
             <div className="dropdown-menu">
               {genres.map((g) => (
-                <div
-                  key={g}
-                  className="dropdown-item"
-                  onClick={() => handleGenreClick(g)}
-                >
+                <div key={g} className="dropdown-item" onClick={() => handleGenreClick(g)}>
                   {g}
                 </div>
               ))}
@@ -78,6 +67,13 @@ function Navbar() {
         {user ? (
           <>
             <span className="user-name">Hi, {user.name}</span>
+            <button className="nav-link-btn" onClick={() => navigate("/mylist")}>My List</button>
+            <button className="nav-link-btn" onClick={() => navigate("/profile")}>Profile</button>
+            {isAdmin && (
+              <button className="admin-badge" onClick={() => navigate("/admin")} title="Admin Dashboard">
+                ⚙ Admin
+              </button>
+            )}
             <button className="logout-btn" onClick={handleLogout}>Logout</button>
           </>
         ) : (

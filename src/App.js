@@ -9,6 +9,9 @@ import Watch from "./features/movies/components/Watch";
 import Series from "./features/movies/components/Series";
 import Genres from "./features/movies/components/Genres";
 import Search from "./features/movies/components/Search";
+import AdminDashboard from "./features/admin/AdminDashboard";
+import UserProfile from "./features/auth/components/UserProfile";
+import MyList from "./features/movies/components/MyList";
 
 function App() {
   return (
@@ -22,6 +25,9 @@ function App() {
         <Route path="/watch/:id" element={<Watch />} />
         <Route path="/genres/:genre" element={<Genres />} />
         <Route path="/search/:query" element={<Search />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/profile" element={<UserProfile />} />
+        <Route path="/mylist" element={<MyList />} />
       </Routes>
     </BrowserRouter>
   );
