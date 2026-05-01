@@ -1,0 +1,104 @@
+.payment-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80vh;
+  padding: 20px;
+}
+
+.payment-card {
+  background: var(--bg-card);
+  padding: 40px;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  max-width: 500px;
+  width: 100%;
+  text-align: center;
+}
+
+.payment-card h2 {
+  color: #fff;
+  margin-bottom: 10px;
+}
+
+.payment-card p {
+  color: var(--text-muted);
+  margin-bottom: 30px;
+}
+
+.plans {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.plan-item {
+  background: rgba(255,255,255,0.05);
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.plan-item h3 {
+  margin: 0;
+  color: #fff;
+}
+
+.plan-item .price {
+  color: var(--primary);
+  font-size: 20px;
+  font-weight: bold;
+  margin: 10px 0 20px 0;
+}
+
+.pay-btn {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.3s;
+}
+
+.pay-btn:hover {
+  background: #ff4a7a;
+}
+
+.basic-btn {
+  background: transparent;
+  border: 1px solid var(--primary);
+  color: var(--primary);
+}
+
+.basic-btn:hover {
+  background: rgba(255,46,99,0.1);
+}
+
+.payment-error {
+  color: #ff4d4d;
+  background: rgba(255,77,77,0.1);
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.payment-card.success h2 {
+  color: #4CAF50;
+}
+
+.back-btn-text {
+  margin-top: 30px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+}
+.back-btn-text:hover {
+  color: #fff;
+  text-decoration: underline;
+}

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
+import { AuthContext } from "./../AuthContext";
 
 function Register() {
   const [name, setName] = useState("");
@@ -7,6 +8,7 @@ function Register() {
   const [password, setPassword] = useState("");
   const [planId, setPlanId] = useState(1);
   const navigate = useNavigate();
+  const { login } = useContext(AuthContext);
 
   const fetchRegister = async (e) => {
     e.preventDefault();
@@ -22,8 +24,21 @@ function Register() {
       const data = await response.json();
 
       if (response.ok) {
-        alert("Registration successful! Please login.");
-        navigate("/login");
+        // Auto-login by simulating the login process
+        const loginResponse = await fetch("http://localhost:5000/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        
+        const loginData = await loginResponse.json();
+        if (loginResponse.ok) {
+          login(loginData.user, loginData.token);
+          navigate("/");
+        } else {
+          alert("Registration successful, but auto-login failed. Please login.");
+          navigate("/login");
+        }
       } else {
         alert(data.message || "Registration failed");
       }

@@ -12,6 +12,7 @@ import Search from "./features/movies/components/Search";
 import AdminDashboard from "./features/admin/AdminDashboard";
 import UserProfile from "./features/auth/components/UserProfile";
 import MyList from "./features/movies/components/MyList";
+import DummyPayment from "./features/payments/components/DummyPayment";
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/profile" element={<UserProfile />} />
         <Route path="/mylist" element={<MyList />} />
+        <Route path="/pay" element={<DummyPayment />} />
       </Routes>
     </BrowserRouter>
   );

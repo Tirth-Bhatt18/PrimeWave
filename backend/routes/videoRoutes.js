@@ -52,7 +52,7 @@ router.get('/:contentId/catalog', verifyToken, async (req, res) => {
                 description: content.description || '',
                 year: content.year,
                 rating: content.rating,
-                image: content.image || 'https://via.placeholder.com/500x750/14141a/ffffff?text=' + encodeURIComponent(content.title),
+                image: await resolveImage({ image: content.image, title: content.title }),
                 duration: content.duration ? `${Math.floor(content.duration/60)}h ${content.duration%60}m` : null
             });
         }
@@ -106,7 +106,7 @@ router.get('/:contentId/catalog', verifyToken, async (req, res) => {
             description: content.description || '',
             year: content.year,
             rating: content.rating,
-            image: content.image || 'https://via.placeholder.com/500x750/14141a/ffffff?text=' + encodeURIComponent(content.title),
+            image: await resolveImage({ image: content.image, title: content.title }),
             seasons: Array.from(seasonsMap.values()),
         });
     } catch (err) {
@@ -115,9 +115,16 @@ router.get('/:contentId/catalog', verifyToken, async (req, res) => {
     }
 });
 
-// Resolve poster image — thumbnail_url should be a full URL; fallback to placeholder
-const resolveImage = (r) => {
+// Resolve poster image — thumbnail_url should be a full URL, or an S3 key.
+const resolveImage = async (r) => {
     if (r.image && r.image.startsWith('http')) return r.image;
+    if (r.image) {
+        try {
+            return await s3Service.getPresignedUrl(r.image, 3600 * 24); // 24 hours
+        } catch (e) {
+            console.error('Presigned URL error for image:', e.message);
+        }
+    }
     return `https://via.placeholder.com/500x750/14141a/ffffff?text=${encodeURIComponent(r.title)}`;
 };
 
@@ -141,17 +148,17 @@ router.get('/catalog/all', verifyToken, async (req, res) => {
             ORDER BY c.release_year DESC
         `);
         
-        const mapped = rows.rows.map(r => ({
+        const mapped = await Promise.all(rows.rows.map(async r => ({
             id: r.id,
             title: r.title,
             type: r.type,
             description: r.description || '',
             year: r.year,
             rating: r.rating || 0,
-            image: resolveImage(r),
+            image: await resolveImage(r),
             duration: r.duration ? `${Math.floor(r.duration/60)}h ${r.duration%60}m` : null,
             seasons: parseInt(r.seasons) > 0 ? `${r.seasons} Seasons` : null
-        }));
+        })));
         
         const movies = mapped.filter(r => r.type === 'movie');
         const series = mapped.filter(r => r.type === 'series');
@@ -248,36 +255,47 @@ router.get('/:contentId/stream', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Content not found' });
         }
 
-        const exists = await s3Service.checkFileExists(objectKey);
-        if (!exists) {
-            return res.status(404).json({ message: 'Video file not found in storage' });
+        const requestedQuality = req.query.quality || '1080p';
+        const requestedAudio = req.query.audio || 'original';
+        const requestedSubtitle = req.query.subtitle || 'off';
+
+        // Replace the filename in the objectKey with the requested quality
+        const objectKeyDir = objectKey.substring(0, objectKey.lastIndexOf('/') + 1);
+        objectKey = `${objectKeyDir}${requestedQuality}.mp4`;
+
+        // Check if the requested video quality exists
+        const videoExists = await s3Service.checkFileExists(objectKey);
+        if (!videoExists) {
+            return res.status(404).json({ message: `Video quality ${requestedQuality} is not available.` });
         }
 
         const signedUrl = await s3Service.getPresignedUrl(objectKey, 3600);
 
-        // Generate signed URLs for multiple tracks
-        const objectKeyDir = objectKey.substring(0, objectKey.lastIndexOf('/') + 1);
-        const audioData = {};
-        const subtitleData = {};
-
-        const audioTracks = content.audio_tracks || [];
-        const subtitleTracks = content.subtitle_tracks || [];
-
-        for (const lang of audioTracks) {
-            const trackKey = `${objectKeyDir}audio_${lang}.aac`;
-            try { audioData[lang] = await s3Service.getPresignedUrl(trackKey); } catch (e) {}
+        let audioUrl = null;
+        if (requestedAudio !== 'original') {
+            const audioKey = `${objectKeyDir}audio_${requestedAudio}.aac`;
+            const audioExists = await s3Service.checkFileExists(audioKey);
+            if (!audioExists) {
+                return res.status(404).json({ message: `Audio track ${requestedAudio} is not available.` });
+            }
+            audioUrl = await s3Service.getPresignedUrl(audioKey, 3600);
         }
 
-        for (const lang of subtitleTracks) {
-            const trackKey = `${objectKeyDir}sub_${lang}.vtt`;
-            try { subtitleData[lang] = await s3Service.getPresignedUrl(trackKey); } catch (e) {}
+        let subtitleUrl = null;
+        if (requestedSubtitle !== 'off') {
+            const subtitleKey = `${objectKeyDir}sub_${requestedSubtitle}.vtt`;
+            const subtitleExists = await s3Service.checkFileExists(subtitleKey);
+            if (!subtitleExists) {
+                return res.status(404).json({ message: `Subtitle track ${requestedSubtitle} is not available.` });
+            }
+            subtitleUrl = await s3Service.getPresignedUrl(subtitleKey, 3600);
         }
 
         return res.json({ 
             url: signedUrl, 
             expiresIn: 3600,
-            audios: audioData,
-            subtitles: subtitleData
+            audioUrl,
+            subtitleUrl
         });
     } catch (err) {
         console.error('Failed to generate signed video URL:', err);

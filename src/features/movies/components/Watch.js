@@ -7,21 +7,32 @@ function Watch() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [videoUrl, setVideoUrl] = useState("");
-  const [trackData, setTrackData] = useState({ audios: {}, subtitles: {} });
+  const [audioUrl, setAudioUrl] = useState(null);
+  const [subtitleUrl, setSubtitleUrl] = useState(null);
   const [loading, setLoading] = useState(true);
   const [streamLoading, setStreamLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectionError, setSelectionError] = useState("");
   const [catalog, setCatalog] = useState(null);
+
+  const [selectedQuality, setSelectedQuality] = useState('1080p');
+  const [selectedAudio, setSelectedAudio] = useState('original');
+  const [selectedSubtitle, setSelectedSubtitle] = useState('off');
+
+  const QUALITIES = ['1080p', '720p', '480p'];
+  const AUDIOS = [{ id: 'original', label: 'Original' }, { id: 'en', label: 'English' }, { id: 'es', label: 'Spanish' }, { id: 'hi', label: 'Hindi' }];
+  const SUBTITLES = [{ id: 'off', label: 'Off' }, { id: 'en', label: 'English' }, { id: 'es', label: 'Spanish' }, { id: 'hi', label: 'Hindi' }];
   const [selectedSeason, setSelectedSeason] = useState(null);
   const [selectedEpisode, setSelectedEpisode] = useState(null);
   const videoRef = useRef(null);
+  const audioRef = useRef(null);
   const streamAbortRef = useRef(null);
   const streamRequestIdRef = useRef(0);
   const progressIntervalRef = useRef(null);
 
   const getToken = () => localStorage.getItem("token");
 
-  const fetchStreamUrl = async (seasonNumber, episodeNumber) => {
+  const fetchStreamUrl = async (seasonNumber, episodeNumber, quality = selectedQuality, audio = selectedAudio, subtitle = selectedSubtitle) => {
     const token = getToken();
 
     if (!token) {
@@ -40,15 +51,19 @@ function Watch() {
     try {
       setStreamLoading(true);
       setError("");
+      setSelectionError("");
 
       const response = await api.get("/videos/" + id + "/stream", {
         headers: {
           Authorization: "Bearer " + token,
         },
-        params:
-          seasonNumber && episodeNumber
-            ? { seasonNumber, episodeNumber }
-            : undefined,
+        params: {
+          seasonNumber: seasonNumber || undefined,
+          episodeNumber: episodeNumber || undefined,
+          quality,
+          audio,
+          subtitle
+        },
         signal: controller.signal,
       });
 
@@ -58,15 +73,15 @@ function Watch() {
 
       const nextUrl = response.data?.url || "";
 
-      if (nextUrl && nextUrl !== videoUrl) {
+      if (nextUrl) {
         setVideoUrl(nextUrl);
-        setTrackData({
-          audios: response.data?.audios || {},
-          subtitles: response.data?.subtitles || {}
-        });
-      }
-
-      if (!nextUrl) {
+        setAudioUrl(response.data?.audioUrl || null);
+        setSubtitleUrl(response.data?.subtitleUrl || null);
+        
+        setSelectedQuality(quality);
+        setSelectedAudio(audio);
+        setSelectedSubtitle(subtitle);
+      } else {
         setError("Unable to load video stream.");
       }
     } catch (err) {
@@ -77,7 +92,11 @@ function Watch() {
       if (err.response?.status === 401) {
         setError("Your session has expired. Please log in again.");
       } else if (err.response?.status === 404) {
-        setError("Requested video was not found.");
+        if (err.response.data?.message && err.response.data.message.includes('not available')) {
+            setSelectionError(err.response.data.message);
+        } else {
+            setError("Requested video was not found.");
+        }
       } else {
         setError("Unable to load video right now. Please try again.");
       }
@@ -151,32 +170,40 @@ function Watch() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Sync external audio with video
   useEffect(() => {
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
+    const video = videoRef.current;
+    const audio = audioRef.current;
+    if (!video || !audio) return;
 
-    if (videoUrl) {
-      // Stop any ongoing network activity on the element BEFORE switching to the new URL
-      videoEl.pause();
-      videoEl.removeAttribute('src');
-      videoEl.load(); // Cancels the previous S3 fetch immediately
+    const handlePlay = () => audio.play().catch(() => {});
+    const handlePause = () => audio.pause();
+    const handleSeeked = () => { audio.currentTime = video.currentTime; };
+    const handleWaiting = () => audio.pause();
+    const handlePlaying = () => audio.play().catch(() => {});
+    const handleTimeUpdate = () => {
+        // Correct drift
+        if (Math.abs(audio.currentTime - video.currentTime) > 0.3) {
+            audio.currentTime = video.currentTime;
+        }
+    };
 
-      videoEl.src = videoUrl;
-      videoEl.load();
-
-      const playPromise = videoEl.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => { /* autoplay blocked by browser */ });
-      }
-    }
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('seeked', handleSeeked);
+    video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('playing', handlePlaying);
+    video.addEventListener('timeupdate', handleTimeUpdate);
 
     return () => {
-      // Component unmounting OR videoUrl changing — stop the browser fetching S3 bytes
-      videoEl.pause();
-      videoEl.removeAttribute('src');
-      videoEl.load();
+        video.removeEventListener('play', handlePlay);
+        video.removeEventListener('pause', handlePause);
+        video.removeEventListener('seeked', handleSeeked);
+        video.removeEventListener('waiting', handleWaiting);
+        video.removeEventListener('playing', handlePlaying);
+        video.removeEventListener('timeupdate', handleTimeUpdate);
     };
-  }, [videoUrl]);
+  }, [videoUrl, audioUrl]);
 
   // Auto-save continue watching every 30s while video plays
   useEffect(() => {
@@ -291,24 +318,56 @@ function Watch() {
       )}
 
       {!loading && !error && videoUrl && (
+        <div className="track-selectors">
+            {selectionError && <div className="selection-error" style={{ color: '#ff4d6d', marginBottom: '10px' }}>{selectionError}</div>}
+            <div className="selector-group" style={{ display: 'flex', gap: '20px', marginBottom: '20px' }}>
+                <label>
+                    Quality:
+                    <select value={selectedQuality} onChange={(e) => fetchStreamUrl(selectedSeason, selectedEpisode, e.target.value, selectedAudio, selectedSubtitle)} style={{ marginLeft: '10px', padding: '5px', borderRadius: '5px', background: '#333', color: '#fff', border: '1px solid #555' }}>
+                        {QUALITIES.map(q => <option key={q} value={q}>{q}</option>)}
+                    </select>
+                </label>
+                <label>
+                    Audio:
+                    <select value={selectedAudio} onChange={(e) => fetchStreamUrl(selectedSeason, selectedEpisode, selectedQuality, e.target.value, selectedSubtitle)} style={{ marginLeft: '10px', padding: '5px', borderRadius: '5px', background: '#333', color: '#fff', border: '1px solid #555' }}>
+                        {AUDIOS.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+                    </select>
+                </label>
+                <label>
+                    Subtitle:
+                    <select value={selectedSubtitle} onChange={(e) => fetchStreamUrl(selectedSeason, selectedEpisode, selectedQuality, selectedAudio, e.target.value)} style={{ marginLeft: '10px', padding: '5px', borderRadius: '5px', background: '#333', color: '#fff', border: '1px solid #555' }}>
+                        {SUBTITLES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                    </select>
+                </label>
+            </div>
+        </div>
+      )}
+
+      {!loading && !error && videoUrl && (
         <div className="video-container">
           <video 
             ref={videoRef} 
+            src={videoUrl}
+            crossOrigin="anonymous"
             controls 
+            autoPlay
             width="100%" 
             preload="auto"
+            muted={audioUrl !== null} // Mute video if external audio is playing
           >
-            {Object.keys(trackData.subtitles).map((lang, index) => (
+            {subtitleUrl && (
               <track 
-                key={lang} 
                 kind="subtitles" 
-                src={trackData.subtitles[lang]} 
-                srcLang={lang} 
-                label={lang.toUpperCase() + ' Subtitles'} 
-                default={index === 0} 
+                src={subtitleUrl} 
+                srcLang={selectedSubtitle} 
+                label={SUBTITLES.find(s => s.id === selectedSubtitle)?.label + ' Subtitles'} 
+                default 
               />
-            ))}
+            )}
           </video>
+          {audioUrl && (
+              <audio ref={audioRef} src={audioUrl} preload="auto" />
+          )}
         </div>
       )}
     </div>

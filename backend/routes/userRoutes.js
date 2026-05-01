@@ -33,31 +33,20 @@ router.get('/recommendations', verifyToken, async (req, res) => {
             ORDER BY RANDOM() LIMIT 12
         `, [req.user.id]);
 
-        const IMAGE_MAP = {
-            'departed.jpg': 'https://image.tmdb.org/t/p/w500/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg',
-            'scarface.jpg': 'https://image.tmdb.org/t/p/w500/rAiYTfKGqDCRIIqo664sY9XZIvQ.jpg',
-            'gone_girl.jpg': 'https://image.tmdb.org/t/p/w500/fQBzPFHZ8p8n7V9x8A8LMxhMOnU.jpg',
-            'shutter_island.jpg': 'https://image.tmdb.org/t/p/w500/52d4oRBRCECoUCAB3JJGhZCAj0.jpg',
-            'fight_club.jpg': 'https://image.tmdb.org/t/p/w500/bptfVGEQuv6vDTIMVCHjJ9Dz8PX.jpg',
-            'se7en.jpg': 'https://image.tmdb.org/t/p/w500/6yoghtyTpznpBik8EngEmJskVUO.jpg',
-            'forrest_gump.jpg': 'https://image.tmdb.org/t/p/w500/arw2vcBveWOVZr6pxd9XTd1TdQa.jpg',
-            'shawshank.jpg': 'https://image.tmdb.org/t/p/w500/q6y0Go1tsGEsmtFryDOJo3dEmqu.jpg',
-            'narcos.jpg': 'https://image.tmdb.org/t/p/w500/rTmal9fDbwh5F0waol2hq35U4ah.jpg',
-            'mindhunter.jpg': 'https://image.tmdb.org/t/p/w500/zlD76aLhiNGsZSmFnFzRbz3vYqo.jpg',
-            'money_heist.jpg': 'https://image.tmdb.org/t/p/w500/reEMJA1OFf0oHFkR6Dz3sHb1v6U.jpg',
-            'dark.jpg': 'https://image.tmdb.org/t/p/w500/apbrbWs8M9lyOpJYU5WXrpFbk1Z.jpg',
-            'you.jpg': 'https://image.tmdb.org/t/p/w500/7ppVAa2OUHLP1F1QT40gSPeq4MN.jpg',
-            'stranger_things.jpg': 'https://image.tmdb.org/t/p/w500/49WJfeN0moxb9IPfGn8AIqMGskD.jpg',
-            'westworld.jpg': 'https://image.tmdb.org/t/p/w500/jbFSMqSJ5VKWQzUE7MvJLEWGJBh.jpg',
-        };
-        const resolve = (r) => {
-            if (r.id === 1) return 'https://image.tmdb.org/t/p/w500/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg';
-            if (r.id === 2) return 'https://image.tmdb.org/t/p/w500/rAiYTfKGqDCRIIqo664sY9XZIvQ.jpg';
-            if (r.id === 101) return 'https://image.tmdb.org/t/p/w500/ggFHVNu6YYI5L9pCfOacjizRGt.jpg';
-            if (r.image && IMAGE_MAP[r.image]) return IMAGE_MAP[r.image];
+        const resolveImage = async (r) => {
+            if (r.image && r.image.startsWith('http')) return r.image;
+            if (r.image) {
+                try {
+                    const s3Service = require('../services/s3Service');
+                    return await s3Service.getPresignedUrl(r.image, 3600 * 24);
+                } catch (e) {
+                    console.error('Presigned URL error:', e.message);
+                }
+            }
             return `https://via.placeholder.com/500x750/14141a/ffffff?text=${encodeURIComponent(r.title)}`;
         };
-        res.json(rows.rows.map(r => ({ ...r, image: resolve(r) })));
+        const mapped = await Promise.all(rows.rows.map(async r => ({ ...r, image: await resolveImage(r) })));
+        res.json(mapped);
     } catch (e) {
         console.error(e);
         res.status(500).json({ message: 'Error fetching recommendations' });
@@ -65,3 +54,36 @@ router.get('/recommendations', verifyToken, async (req, res) => {
 });
 
 module.exports = router;
+
+// POST /api/user/pay — Dummy payment flow
+router.post('/pay', verifyToken, async (req, res) => {
+    const { plan_id, amount } = req.body;
+    try {
+        const userId = req.user.id;
+        // Mock successful transaction
+        const transactionId = 'MOCK_' + Math.random().toString(36).substr(2, 9);
+        
+        const client = await db.pool ? await db.pool.connect() : null;
+        if (client) await client.query('BEGIN');
+        
+        await db.query(
+            'UPDATE user_subscriptions SET plan_id = $1, status = $2 WHERE user_id = $3',
+            [plan_id, 'ACTIVE', userId]
+        );
+        
+        await db.query(
+            'INSERT INTO payments (user_id, amount, payment_method, payment_status, transaction_id, provider) VALUES ($1, $2, $3, $4, $5, $6)',
+            [userId, amount, 'Credit Card', 'SUCCESS', transactionId, 'DUMMY']
+        );
+        
+        if (client) {
+            await client.query('COMMIT');
+            client.release();
+        }
+        
+        res.json({ message: 'Payment successful', transactionId });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ message: 'Payment failed' });
+    }
+});

@@ -164,3 +164,34 @@ All tables establish Functional Dependencies fully reliant on their Primary Keys
 
 **Admin route:**
 - `GET /api/admin/dashboard` (requires admin JWT)
+
+## System Architecture Details
+
+### Database: The Hybrid Model (JSONB vs Normalized)
+PrimeWave uses a **Hybrid Database Model** to balance strict relational integrity with flexible dynamic metadata.
+
+**Why JSONB was initially used:**
+- Faster read operations (fewer joins) for arrays of simple strings like audio tracks and subtitle languages.
+- Flexible schema without needing a rigid table structure for rapidly changing metadata fields.
+
+**Why we normalized media tracks:**
+- As the system scales, JSONB breaks the First Normal Form (1NF) rule of atomicity. 
+- It makes filtering, indexing, and querying for specific file paths significantly harder.
+- **Final Approach:** Structured data (video files, precise audio/subtitle tracks with S3 URLs) is moved to strict normalized tables (`video_files`, `audio_tracks`, `subtitle_tracks`). Dynamic, unpredictable metadata (like AI tags or extra non-essential descriptors) remains in JSONB columns.
+
+### Recommendation System
+PrimeWave features a **Hybrid Recommendation Engine** designed to offer a personalized "Netflix-style" homepage.
+
+**Internal Full Flow:**
+1. **Input Data Aggregation:**
+   - Evaluates the user's explicit actions: `user_watchlist`, `user_favorites`, and reviews.
+   - Gathers implicit signals: `user_playback` (completion rate) and `continue_watching` (engagement).
+   - Maps content relationships via the `content_tag_map` and `content_genres` tables.
+2. **Content-Based Filtering:**
+   - Suggests content that shares genres and tags with the user's highest-engaged content (e.g., if a user watches Sci-Fi thrillers, it fetches content with matching tags).
+3. **Collaborative Filtering:**
+   - Identifies cohorts of users with similar interaction histories and recommends content those cohorts enjoyed.
+4. **Trending & Popularity Boost:**
+   - Content with sudden spikes in global `user_interactions` receives a dynamic weight boost to appear in "Trending" rows.
+5. **Output Delivery:**
+   - The `/api/user/recommendations` endpoint blends these signals to return distinct, personalized rows such as *"Because you watched X"*, *"Trending Now"*, and *"Recommended for You"*.

@@ -46,8 +46,6 @@ p {
 /* ================= ROW SCROLLING ================= */
 .row-wrapper {
   position: relative;
-  display: flex;
-  align-items: center;
   margin-top: 10px;
 }
 

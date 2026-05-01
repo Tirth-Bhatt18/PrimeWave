@@ -122,11 +122,15 @@ router.post('/content/sync-s3', verifyToken, isAdmin, async (req, res) => {
 
 // POST /api/admin/content/movie — Add a new movie
 router.post('/content/movie', verifyToken, isAdmin, async (req, res) => {
-    const { title, description, release_year, age_rating, access_level, thumbnail_url, video_url, duration } = req.body;
+    const { title, description, release_year, age_rating, access_level, thumbnail_url, video_url, duration, audios, subtitles, qualities } = req.body;
 
     if (!title) return res.status(400).json({ message: 'Title is required' });
 
+    const client = await db.pool ? await db.pool.connect() : null;
+    
     try {
+        if (client) await client.query('BEGIN');
+        
         // Insert into content table
         const contentRes = await db.query(
             `INSERT INTO content (title, description, content_type, release_year, age_rating, access_level, thumbnail_url)
@@ -140,15 +144,58 @@ router.post('/content/movie', verifyToken, isAdmin, async (req, res) => {
             `INSERT INTO movies (content_id, video_url, duration) VALUES ($1, $2, $3)`,
             [contentId, video_url || null, duration || null]
         );
+        
+        // Default video_files entry if video_url is provided
+        if (video_url) {
+            await db.query('INSERT INTO video_files (content_id, quality, file_url) VALUES ($1, $2, $3)', [contentId, '1080p', video_url]);
+        }
+
+        // Additional qualities (e.g., '720p:url,480p:url')
+        if (qualities) {
+            const qs = qualities.split(',').map(s => s.trim()).filter(Boolean);
+            for (let q of qs) {
+                const [ql, url] = q.split('|');
+                if (ql && url) {
+                    await db.query('INSERT INTO video_files (content_id, quality, file_url) VALUES ($1, $2, $3)', [contentId, ql.trim(), url.trim()]);
+                }
+            }
+        }
+
+        // Audios (e.g., 'en:url,es:url')
+        if (audios) {
+            const arr = audios.split(',').map(s => s.trim()).filter(Boolean);
+            for (let a of arr) {
+                const [lang, url] = a.split('|');
+                if (lang && url) {
+                    await db.query('INSERT INTO audio_tracks (content_id, language_code, file_url) VALUES ($1, $2, $3)', [contentId, lang.trim(), url.trim()]);
+                }
+            }
+        }
+
+        // Subtitles (e.g., 'en:url,fr:url')
+        if (subtitles) {
+            const arr = subtitles.split(',').map(s => s.trim()).filter(Boolean);
+            for (let a of arr) {
+                const [lang, url] = a.split('|');
+                if (lang && url) {
+                    await db.query('INSERT INTO subtitle_tracks (content_id, language_code, file_url) VALUES ($1, $2, $3)', [contentId, lang.trim(), url.trim()]);
+                }
+            }
+        }
+
+        if (client) await client.query('COMMIT');
 
         res.status(201).json({
             message: 'Movie added successfully',
             content_id: contentId
         });
     } catch (err) {
+        if (client) await client.query('ROLLBACK');
         console.error('Error adding movie:', err);
         if (err.code === '23505') return res.status(409).json({ message: 'A movie with this title already exists' });
         res.status(500).json({ message: 'Failed to add movie' });
+    } finally {
+        if (client) client.release();
     }
 });
 
