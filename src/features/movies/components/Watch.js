@@ -91,6 +91,8 @@ function Watch() {
 
       if (err.response?.status === 401) {
         setError("Your session has expired. Please log in again.");
+      } else if (err.response?.status === 403) {
+        setError("UPGRADE_REQUIRED");
       } else if (err.response?.status === 404) {
         if (err.response.data?.message && err.response.data.message.includes('not available')) {
             setSelectionError(err.response.data.message);
@@ -254,12 +256,15 @@ function Watch() {
 
       {!loading && error && (
         <div className="watch-error">
-          {error.includes('Subscription') ? (
+          {error === "UPGRADE_REQUIRED" ? (
             <div className="upgrade-prompt">
               <span className="lock-icon">🔒</span>
               <h3>Premium Content</h3>
-              <p>This content requires a higher subscription tier.</p>
-              <button className="upgrade-btn" onClick={() => navigate('/')}>Upgrade Plan</button>
+              <p>This content is only available for Premium subscribers.</p>
+              <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', marginTop: '20px' }}>
+                <button className="upgrade-btn" onClick={() => navigate('/payment')}>⭐ Upgrade to Premium</button>
+                <button className="upgrade-btn" style={{ background: 'rgba(255,255,255,0.1)' }} onClick={() => navigate(-1)}>← Go Back</button>
+              </div>
             </div>
           ) : (
             <p role="alert">{error}</p>

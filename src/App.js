@@ -29,6 +29,7 @@ function App() {
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/profile" element={<UserProfile />} />
         <Route path="/mylist" element={<MyList />} />
+        <Route path="/payment" element={<DummyPayment />} />
         <Route path="/pay" element={<DummyPayment />} />
       </Routes>
     </BrowserRouter>

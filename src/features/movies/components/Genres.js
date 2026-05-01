@@ -66,6 +66,7 @@ function Genres() {
               <div key={item.id} className="movie-wrapper" onClick={() => navigate(`/movie/${item.id}`)}>
                 <div className="movie-card">
                   <img src={item.image} alt={item.title} referrerPolicy="no-referrer" />
+                  {item.accessLevel > 1 && <div className="premium-badge">🔒 Premium</div>}
                   <div className="movie-overlay"><h3>{item.title}</h3></div>
                 </div>
               </div>
@@ -82,6 +83,7 @@ function Genres() {
               <div key={item.id} className="movie-wrapper" onClick={() => navigate(`/movie/${item.id}`)}>
                 <div className="movie-card">
                   <img src={item.image} alt={item.title} referrerPolicy="no-referrer" />
+                  {item.accessLevel > 1 && <div className="premium-badge">🔒 Premium</div>}
                   <div className="movie-overlay"><h3>{item.title}</h3></div>
                 </div>
               </div>

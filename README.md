@@ -159,11 +159,25 @@ All tables establish Functional Dependencies fully reliant on their Primary Keys
 - `POST /api/auth/admin/register` : Register a new admin
 - `POST /api/auth/login` : Login user/admin
 
-**User route:**
+**User routes:**
 - `GET /api/user/profile` (requires user JWT)
+- `GET /api/user/recommendations` (requires user JWT)
+- `POST /api/user/pay` (Dummy payment processing & upgrade)
+- `POST /api/user/downgrade` (Downgrade to Free plan)
 
-**Admin route:**
+**Library routes:**
+- `GET /api/library/watchlist`
+- `GET /api/library/favorites`
+- `GET /api/library/continue`
+
+**Admin routes:**
 - `GET /api/admin/dashboard` (requires admin JWT)
+- `GET /api/admin/presigned-put` (Generate AWS S3 Presigned URLs for direct uploads)
+- `POST /api/admin/content/movie` & `POST /api/admin/content/series`
+
+**Video routes:**
+- `GET /api/videos/:id/reviews` (Fetch content reviews)
+- `POST /api/videos/:id/reviews` (Submit a review, requires `continue_watching` validation)
 
 ## System Architecture Details
 
@@ -195,3 +209,20 @@ PrimeWave features a **Hybrid Recommendation Engine** designed to offer a person
    - Content with sudden spikes in global `user_interactions` receives a dynamic weight boost to appear in "Trending" rows.
 5. **Output Delivery:**
    - The `/api/user/recommendations` endpoint blends these signals to return distinct, personalized rows such as *"Because you watched X"*, *"Trending Now"*, and *"Recommended for You"*.
+
+### User Tiers & Premium Content
+PrimeWave implements a robust subscription tier system:
+- **Basic (Free):** Access to standard content.
+- **Premium ($9.99/mo):** Unlocks exclusive premium content (e.g., Inception, Dark). Premium content is visually demarcated with a `🔒 Premium` badge across the UI.
+- The platform uses a **Dummy Payment Gateway** (`/payment`) that automatically upgrades the user's tier, dynamically updating their database record and issuing a refreshed JWT on-the-fly, allowing immediate access to premium streams without forcing a re-login.
+
+### Admin Panel & Direct-to-S3 Uploads
+The Admin Dashboard features a highly-optimized file upload pipeline designed to handle gigabytes of 4K/1080p video files without crashing the Node.js backend.
+- **Presigned URLs:** When an admin uploads files, the frontend requests secure `Presigned PUT URLs` from the `/api/admin/presigned-put` route.
+- **Direct Upload:** The browser uploads the large video files *directly* to the AWS S3 bucket, completely bypassing the backend server's memory limitations.
+- **Instant Synchronization:** Once S3 confirms the upload, the metadata is pushed to the backend to immediately register the content in the PostgreSQL database.
+
+### Reviews & Ratings System
+The platform includes an integrated user review system to drive engagement.
+- **Watch Validation:** Users are strictly prevented from reviewing content they haven't watched. The backend actively verifies that the user has a valid record with `progress_seconds > 0` in the `continue_watching` table before accepting a POST request to `/api/videos/:id/reviews`.
+- **Aggregated Scoring:** Ratings (1-5 stars) are aggregated in real-time and displayed on the movie's details page.

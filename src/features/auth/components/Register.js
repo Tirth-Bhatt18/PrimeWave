@@ -34,7 +34,11 @@ function Register() {
         const loginData = await loginResponse.json();
         if (loginResponse.ok) {
           login(loginData.user, loginData.token);
-          navigate("/");
+          if (planId > 1) {
+            navigate("/payment");
+          } else {
+            navigate("/");
+          }
         } else {
           alert("Registration successful, but auto-login failed. Please login.");
           navigate("/login");

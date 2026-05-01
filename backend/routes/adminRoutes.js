@@ -7,25 +7,23 @@ const s3Service = require('../services/s3Service');
 // GET /api/admin/dashboard — full stats
 router.get('/dashboard', verifyToken, isAdmin, async (req, res) => {
     try {
-        const [users, content, series, movies, watchlistCount, favCount, cwCount, recentUsers] = await Promise.all([
+        const [users, premiumUsers, content, series, movies, watchTime, recentUsers] = await Promise.all([
             db.query('SELECT COUNT(*) FROM users'),
+            db.query('SELECT COUNT(DISTINCT user_id) FROM user_subscriptions WHERE plan_id = 2 AND status = \'ACTIVE\''),
             db.query('SELECT COUNT(*) FROM content'),
             db.query("SELECT COUNT(*) FROM content WHERE content_type='series'"),
             db.query("SELECT COUNT(*) FROM content WHERE content_type='movie'"),
-            db.query('SELECT COUNT(*) FROM user_watchlist'),
-            db.query('SELECT COUNT(*) FROM user_favorites'),
-            db.query('SELECT COUNT(*) FROM continue_watching'),
+            db.query('SELECT SUM(progress_seconds) as total_seconds FROM continue_watching'),
             db.query('SELECT user_id, name, email, created_at, status FROM users ORDER BY created_at DESC LIMIT 10'),
         ]);
         res.json({
             stats: {
                 totalUsers: parseInt(users.rows[0].count),
+                premiumUsers: parseInt(premiumUsers.rows[0].count),
                 totalContent: parseInt(content.rows[0].count),
                 totalMovies: parseInt(movies.rows[0].count),
                 totalSeries: parseInt(series.rows[0].count),
-                totalWatchlistEntries: parseInt(watchlistCount.rows[0].count),
-                totalFavorites: parseInt(favCount.rows[0].count),
-                totalContinueWatching: parseInt(cwCount.rows[0].count),
+                totalWatchTimeHours: watchTime.rows[0].total_seconds ? Math.round(parseInt(watchTime.rows[0].total_seconds) / 3600) : 0,
             },
             recentUsers: recentUsers.rows,
         });
@@ -35,21 +33,37 @@ router.get('/dashboard', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// GET /api/admin/users — all users
+// GET /api/admin/users — all users with plan info
 router.get('/users', verifyToken, isAdmin, async (req, res) => {
     try {
-        const rows = await db.query('SELECT user_id, name, email, phone, status, created_at FROM users ORDER BY created_at DESC');
+        const rows = await db.query(`
+            SELECT u.user_id, u.name, u.email, u.phone, u.status, u.created_at,
+                   COALESCE(us.plan_id, 1) as plan_id,
+                   sp.plan_name
+            FROM users u
+            LEFT JOIN user_subscriptions us ON u.user_id = us.user_id
+            LEFT JOIN subscription_plans sp ON us.plan_id = sp.plan_id
+            ORDER BY u.created_at DESC
+        `);
         res.json(rows.rows);
-    } catch (err) { res.status(500).json({ message: 'Error fetching users' }); }
+    } catch (err) {
+        console.error('Error fetching users:', err);
+        res.status(500).json({ message: 'Error fetching users' });
+    }
 });
 
-// PATCH /api/admin/users/:id — update user status
+// PATCH /api/admin/users/:id — update user status (ACTIVE/INACTIVE)
 router.patch('/users/:id', verifyToken, isAdmin, async (req, res) => {
     const { status } = req.body;
+    const allowed = ['ACTIVE', 'INACTIVE'];
+    if (!allowed.includes(status)) return res.status(400).json({ message: 'Invalid status. Use ACTIVE or INACTIVE.' });
     try {
         await db.query('UPDATE users SET status=$1 WHERE user_id=$2', [status, req.params.id]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ message: 'Error updating user' }); }
+    } catch (err) {
+        console.error('Error updating user status:', err);
+        res.status(500).json({ message: 'Error updating user' });
+    }
 });
 
 // GET /api/admin/content — all content with metadata
@@ -67,52 +81,19 @@ router.get('/content', verifyToken, isAdmin, async (req, res) => {
     } catch (err) { res.status(500).json({ message: 'Error fetching content' }); }
 });
 
-// POST /api/admin/content/sync-s3 — re-run the S3→DB sync
-router.post('/content/sync-s3', verifyToken, isAdmin, async (req, res) => {
+
+// GET /api/admin/presigned-put — Generate S3 upload URL
+router.get('/presigned-put', verifyToken, isAdmin, async (req, res) => {
+    const { key, contentType } = req.query;
+    if (!key || !contentType) {
+        return res.status(400).json({ message: 'Missing key or contentType' });
+    }
     try {
-        const keys = await s3Service.listAllObjects();
-        let synced = 0;
-        const formatTitle = (slug) => slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-
-        for (const key of keys) {
-            if (key.endsWith('/') || !key.endsWith('.mp4')) continue;
-            const parts = key.split('/');
-
-            if (parts[0] === 'movies' && parts.length >= 3) {
-                const title = formatTitle(parts[1]);
-                let r = await db.query("SELECT content_id FROM content WHERE title ILIKE $1 AND content_type='movie'", [title]);
-                if (r.rows.length === 0) r = await db.query("INSERT INTO content (title, content_type) VALUES ($1,'movie') RETURNING content_id", [title]);
-                const contentId = r.rows[0].content_id;
-                await db.query('INSERT INTO movies (content_id, video_url) VALUES ($1,$2) ON CONFLICT (content_id) DO UPDATE SET video_url=$2', [contentId, key]);
-                synced++;
-            } else if (parts[0] === 'webseries' && parts.length >= 5) {
-                const title = formatTitle(parts[1]);
-                const seasonNum = parseInt(parts[2].replace('season-', ''), 10);
-                const episodeNum = parseInt(parts[3].replace('episode-', ''), 10);
-                if (isNaN(seasonNum) || isNaN(episodeNum)) continue;
-
-                let r = await db.query("SELECT content_id FROM content WHERE title ILIKE $1 AND content_type='series'", [title]);
-                if (r.rows.length === 0) r = await db.query("INSERT INTO content (title, content_type) VALUES ($1,'series') RETURNING content_id", [title]);
-                const contentId = r.rows[0].content_id;
-
-                r = await db.query('SELECT series_id FROM series WHERE content_id=$1', [contentId]);
-                if (r.rows.length === 0) r = await db.query('INSERT INTO series (content_id) VALUES ($1) RETURNING series_id', [contentId]);
-                const seriesId = r.rows[0].series_id;
-
-                r = await db.query('SELECT season_id FROM seasons WHERE series_id=$1 AND season_number=$2', [seriesId, seasonNum]);
-                if (r.rows.length === 0) r = await db.query('INSERT INTO seasons (series_id, season_number) VALUES ($1,$2) RETURNING season_id', [seriesId, seasonNum]);
-                const seasonId = r.rows[0].season_id;
-
-                await db.query(`INSERT INTO episodes (season_id, episode_number, title, video_url) VALUES ($1,$2,$3,$4)
-                    ON CONFLICT (season_id, episode_number) DO UPDATE SET video_url=$4`,
-                    [seasonId, episodeNum, `Episode ${episodeNum}`, key]);
-                synced++;
-            }
-        }
-        res.json({ success: true, synced });
+        const url = await s3Service.getPresignedPutUrl(key, contentType, 3600);
+        res.json({ url });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: 'Sync failed', error: err.message });
+        console.error('Error generating presigned PUT URL:', err);
+        res.status(500).json({ message: 'Failed to generate upload URL' });
     }
 });
 
@@ -263,7 +244,7 @@ router.post('/content/series/:contentId/season', verifyToken, isAdmin, async (re
 // POST /api/admin/content/season/:seasonId/episode — Add an episode to a season
 router.post('/content/season/:seasonId/episode', verifyToken, isAdmin, async (req, res) => {
     const { seasonId } = req.params;
-    const { episode_number, title, video_url } = req.body;
+    const { episode_number, title, video_url, qualities, audios, subtitles } = req.body;
 
     if (!episode_number) return res.status(400).json({ message: 'episode_number is required' });
 
@@ -273,10 +254,48 @@ router.post('/content/season/:seasonId/episode', verifyToken, isAdmin, async (re
              VALUES ($1, $2, $3, $4) RETURNING episode_id`,
             [seasonId, episode_number, title || `Episode ${episode_number}`, video_url || null]
         );
+        const episodeId = epRes.rows[0].episode_id;
+
+        // Get content_id via the season → series → content chain for track tables
+        const contentRes = await db.query(`
+            SELECT c.content_id FROM content c
+            JOIN series sr ON sr.content_id = c.content_id
+            JOIN seasons s ON s.series_id = sr.series_id
+            WHERE s.season_id = $1
+        `, [seasonId]);
+        const contentId = contentRes.rows[0]?.content_id;
+
+        if (contentId) {
+            if (video_url) {
+                await db.query('INSERT INTO video_files (content_id, episode_id, quality, file_url) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+                    [contentId, episodeId, '1080p', video_url]);
+            }
+            if (qualities) {
+                for (const q of qualities.split(',').filter(Boolean)) {
+                    const [ql, url] = q.split('|');
+                    if (ql && url) await db.query('INSERT INTO video_files (content_id, episode_id, quality, file_url) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+                        [contentId, episodeId, ql.trim(), url.trim()]);
+                }
+            }
+            if (audios) {
+                for (const a of audios.split(',').filter(Boolean)) {
+                    const [lang, url] = a.split('|');
+                    if (lang && url) await db.query('INSERT INTO audio_tracks (content_id, episode_id, language_code, file_url) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+                        [contentId, episodeId, lang.trim(), url.trim()]);
+                }
+            }
+            if (subtitles) {
+                for (const s of subtitles.split(',').filter(Boolean)) {
+                    const [lang, url] = s.split('|');
+                    if (lang && url) await db.query('INSERT INTO subtitle_tracks (content_id, episode_id, language_code, file_url) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+                        [contentId, episodeId, lang.trim(), url.trim()]);
+                }
+            }
+        }
 
         res.status(201).json({
             message: `Episode ${episode_number} added`,
-            episode_id: epRes.rows[0].episode_id
+            episode_id: episodeId
         });
     } catch (err) {
         console.error('Error adding episode:', err);

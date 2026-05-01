@@ -35,11 +35,11 @@ const resolveImage = async (id, thumb, title) => {
 // ── WATCHLIST ──────────────────────────────────────────────
 router.get('/watchlist', async (req, res) => {
     const rows = await db.query(`
-        SELECT c.content_id as id, c.title, c.content_type as type, c.thumbnail_url as image
+        SELECT c.content_id as id, c.title, c.content_type as type, c.thumbnail_url as image, c.access_level
         FROM user_watchlist w JOIN content c ON w.content_id = c.content_id
         WHERE w.user_id = $1 ORDER BY w.added_at DESC
     `, [req.user.id]);
-    const mapped = await Promise.all(rows.rows.map(async r => ({ ...r, image: await resolveImage(r.id, r.image, r.title) })));
+    const mapped = await Promise.all(rows.rows.map(async r => ({ ...r, image: await resolveImage(r.id, r.image, r.title), accessLevel: r.access_level })));
     res.json(mapped);
 });
 
@@ -59,11 +59,11 @@ router.delete('/watchlist/:contentId', async (req, res) => {
 // ── FAVORITES ─────────────────────────────────────────────
 router.get('/favorites', async (req, res) => {
     const rows = await db.query(`
-        SELECT c.content_id as id, c.title, c.content_type as type, c.thumbnail_url as image
+        SELECT c.content_id as id, c.title, c.content_type as type, c.thumbnail_url as image, c.access_level
         FROM user_favorites f JOIN content c ON f.content_id = c.content_id
         WHERE f.user_id = $1 ORDER BY f.added_at DESC
     `, [req.user.id]);
-    const mapped = await Promise.all(rows.rows.map(async r => ({ ...r, image: await resolveImage(r.id, r.image, r.title) })));
+    const mapped = await Promise.all(rows.rows.map(async r => ({ ...r, image: await resolveImage(r.id, r.image, r.title), accessLevel: r.access_level })));
     res.json(mapped);
 });
 
@@ -83,12 +83,12 @@ router.delete('/favorites/:contentId', async (req, res) => {
 // ── CONTINUE WATCHING ──────────────────────────────────────
 router.get('/continue', async (req, res) => {
     const rows = await db.query(`
-        SELECT c.content_id as id, c.title, c.content_type as type, c.thumbnail_url as image,
+        SELECT c.content_id as id, c.title, c.content_type as type, c.thumbnail_url as image, c.access_level,
                cw.season_number, cw.episode_number, cw.progress_seconds, cw.updated_at
         FROM continue_watching cw JOIN content c ON cw.content_id = c.content_id
         WHERE cw.user_id = $1 ORDER BY cw.updated_at DESC LIMIT 20
     `, [req.user.id]);
-    const mapped = await Promise.all(rows.rows.map(async r => ({ ...r, image: await resolveImage(r.id, r.image, r.title) })));
+    const mapped = await Promise.all(rows.rows.map(async r => ({ ...r, image: await resolveImage(r.id, r.image, r.title), accessLevel: r.access_level })));
     res.json(mapped);
 });
 

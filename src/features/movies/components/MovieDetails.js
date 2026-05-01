@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../../../config/api";
+import Reviews from "./Reviews";
 import "./MovieDetails.css";
 
 function MovieDetails() {
@@ -83,7 +84,10 @@ function MovieDetails() {
       <button className="back-btn-top" onClick={() => navigate(-1)}>← Back</button>
 
       <div className="details-content">
-        <h1>{item.title}</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          {item.title}
+          {item.accessLevel > 1 && <span className="premium-badge-inline" style={{ fontSize: '16px', background: '#e50914', padding: '4px 8px', borderRadius: '4px', verticalAlign: 'middle' }}>🔒 Premium</span>}
+        </h1>
 
         <div className="meta-row">
           <span className="match-score">98% Match</span>
@@ -129,6 +133,8 @@ function MovieDetails() {
         </div>
 
         <p className="details-desc">{item.description}</p>
+        
+        <Reviews contentId={id} />
       </div>
     </div>
   );

@@ -57,6 +57,7 @@ function Home() {
             <div key={item.id} className="movie-wrapper" onClick={() => handleClick(item)}>
               <div className="movie-card">
                 <img src={item.image} alt={item.title} referrerPolicy="no-referrer" />
+                {item.accessLevel > 1 && <div className="premium-badge">🔒 Premium</div>}
                 {item.progress_seconds > 0 && (
                   <div className="progress-bar">
                     <div className="progress-fill" style={{ width: `${Math.min((item.progress_seconds / 7200) * 100, 100)}%` }}></div>

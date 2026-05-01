@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const jwt = require('jsonwebtoken');
 const { verifyToken } = require('../middleware/authMiddleware');
 const db = require('../db');
 
@@ -23,7 +24,8 @@ router.get('/recommendations', verifyToken, async (req, res) => {
         // Simple strategy: return content NOT in user's watchlist/favorites, ordered by release_year DESC
         const rows = await db.query(`
             SELECT c.content_id as id, c.title, c.content_type as type,
-                   c.thumbnail_url as image, c.release_year as year, c.age_rating as rating
+                   c.thumbnail_url as image, c.release_year as year, c.age_rating as rating,
+                   c.access_level
             FROM content c
             WHERE c.content_id NOT IN (
                 SELECT content_id FROM user_watchlist WHERE user_id=$1
@@ -53,37 +55,62 @@ router.get('/recommendations', verifyToken, async (req, res) => {
     }
 });
 
-module.exports = router;
-
 // POST /api/user/pay — Dummy payment flow
 router.post('/pay', verifyToken, async (req, res) => {
     const { plan_id, amount } = req.body;
     try {
         const userId = req.user.id;
-        // Mock successful transaction
         const transactionId = 'MOCK_' + Math.random().toString(36).substr(2, 9);
-        
-        const client = await db.pool ? await db.pool.connect() : null;
-        if (client) await client.query('BEGIN');
-        
-        await db.query(
-            'UPDATE user_subscriptions SET plan_id = $1, status = $2 WHERE user_id = $3',
-            [plan_id, 'ACTIVE', userId]
-        );
-        
-        await db.query(
-            'INSERT INTO payments (user_id, amount, payment_method, payment_status, transaction_id, provider) VALUES ($1, $2, $3, $4, $5, $6)',
-            [userId, amount, 'Credit Card', 'SUCCESS', transactionId, 'DUMMY']
-        );
-        
-        if (client) {
-            await client.query('COMMIT');
-            client.release();
+
+        // Check if subscription row exists and upsert it
+        const existing = await db.query('SELECT subscription_id FROM user_subscriptions WHERE user_id = $1', [userId]);
+        let subscriptionId;
+        if (existing.rows.length > 0) {
+            subscriptionId = existing.rows[0].subscription_id;
+            await db.query('UPDATE user_subscriptions SET plan_id = $1, status = $2, start_date = NOW() WHERE user_id = $3', [plan_id, 'ACTIVE', userId]);
+        } else {
+            const ins = await db.query('INSERT INTO user_subscriptions (user_id, plan_id, status, start_date) VALUES ($1, $2, $3, NOW()) RETURNING subscription_id', [userId, plan_id, 'ACTIVE']);
+            subscriptionId = ins.rows[0].subscription_id;
         }
-        
-        res.json({ message: 'Payment successful', transactionId });
+
+        // Record payment — include subscription_id to satisfy NOT NULL constraint
+        await db.query(`
+            INSERT INTO payments (user_id, subscription_id, amount, payment_method, payment_status, transaction_id, provider)
+            VALUES ($1, $2, $3, 'Credit Card', 'SUCCESS', $4, 'DUMMY')
+        `, [userId, subscriptionId, amount || 9.99, transactionId]);
+
+        // Strip JWT metadata before re-signing
+        const { exp, iat, nbf, ...userClaims } = req.user;
+        const payload = { ...userClaims, plan_id: parseInt(plan_id) };
+        const newToken = require('jsonwebtoken').sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.TOKEN_EXPIRES_IN || '24h' });
+
+        res.json({ message: 'Payment successful', transactionId, token: newToken, plan_id: payload.plan_id });
     } catch (e) {
-        console.error(e);
-        res.status(500).json({ message: 'Payment failed' });
+        console.error('Payment error:', e);
+        res.status(500).json({ message: 'Payment failed', error: e.message });
     }
 });
+
+// POST /api/user/downgrade
+router.post('/downgrade', verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const existing = await db.query('SELECT subscription_id FROM user_subscriptions WHERE user_id = $1', [userId]);
+        if (existing.rows.length > 0) {
+            await db.query('UPDATE user_subscriptions SET plan_id = 1, status = \'ACTIVE\' WHERE user_id = $1', [userId]);
+        } else {
+            await db.query('INSERT INTO user_subscriptions (user_id, plan_id, status, start_date) VALUES ($1, 1, \'ACTIVE\', NOW())', [userId]);
+        }
+
+        const { exp, iat, nbf, ...userClaims } = req.user;
+        const payload = { ...userClaims, plan_id: 1 };
+        const newToken = require('jsonwebtoken').sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.TOKEN_EXPIRES_IN || '24h' });
+
+        res.json({ message: 'Successfully downgraded to Basic plan', token: newToken, plan_id: 1 });
+    } catch (e) {
+        console.error('Downgrade error:', e);
+        res.status(500).json({ message: 'Downgrade failed' });
+    }
+});
+
+module.exports = router;

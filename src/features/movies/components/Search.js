@@ -58,6 +58,7 @@ function Search() {
             >
               <div className="movie-card">
                 <img src={item.image} alt={item.title} referrerPolicy="no-referrer" />
+                {item.accessLevel > 1 && <div className="premium-badge">🔒 Premium</div>}
                 <div className="movie-overlay">
                   <h3>{item.title}</h3>
                   <p style={{ fontSize: "12px", opacity: 0.7 }}>{item.year} • {item.type}</p>

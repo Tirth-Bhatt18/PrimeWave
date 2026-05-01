@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../config/api";
+import MovieUploadForm from "./MovieUploadForm";
+import SeriesUploadForm from "./SeriesUploadForm";
 import "./AdminDashboard.css";
 
 function AdminDashboard() {
@@ -9,8 +11,6 @@ function AdminDashboard() {
   const [users, setUsers] = useState([]);
   const [content, setContent] = useState([]);
   const [tab, setTab] = useState("overview");
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState("");
 
   // Upload state
   const [uploadMode, setUploadMode] = useState("movie"); // "movie" | "series"
@@ -22,18 +22,6 @@ function AdminDashboard() {
     title: "", description: "", release_year: "", age_rating: "",
     access_level: "1", thumbnail_url: "", video_url: "", duration: ""
   });
-
-  // Series form
-  const [seriesForm, setSeriesForm] = useState({
-    title: "", description: "", release_year: "", age_rating: "",
-    access_level: "1", thumbnail_url: ""
-  });
-
-  // After series created — add seasons/episodes
-  const [createdSeries, setCreatedSeries] = useState(null); // { content_id, series_id, title }
-  const [seasonNumber, setSeasonNumber] = useState("");
-  const [seasons, setSeasons] = useState([]); // [{ season_id, season_number, episodes: [] }]
-  const [episodeForm, setEpisodeForm] = useState({ season_idx: 0, episode_number: "", title: "", video_url: "" });
 
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}` };
@@ -68,24 +56,16 @@ function AdminDashboard() {
   };
 
   const toggleUserStatus = async (userId, currentStatus) => {
-    const newStatus = currentStatus === "active" ? "suspended" : "active";
-    await api.patch(`/admin/users/${userId}`, { status: newStatus }, { headers });
-    setUsers(users.map(u => u.user_id === userId ? { ...u, status: newStatus } : u));
-  };
-
-  const syncS3 = async () => {
-    setSyncing(true);
-    setSyncMsg("");
+    const newStatus = currentStatus?.toUpperCase() === "ACTIVE" ? "INACTIVE" : "ACTIVE";
     try {
-      const res = await api.post("/admin/content/sync-s3", {}, { headers });
-      setSyncMsg(`✅ Synced ${res.data.synced} items from S3`);
-      fetchDashboard();
+      await api.patch(`/admin/users/${userId}`, { status: newStatus }, { headers });
+      setUsers(users.map(u => u.user_id === userId ? { ...u, status: newStatus } : u));
+      setToast({ type: "success", msg: `User ${newStatus === "INACTIVE" ? "deactivated" : "activated"}` });
     } catch (e) {
-      setSyncMsg("❌ Sync failed: " + e.response?.data?.message);
-    } finally {
-      setSyncing(false);
+      setToast({ type: "error", msg: e.response?.data?.message || "Failed to update user status" });
     }
   };
+
 
   const deleteContent = async (contentId, title) => {
     if (!window.confirm(`Delete "${title}"? This cannot be undone.`)) return;
@@ -121,73 +101,6 @@ function AdminDashboard() {
     }
   };
 
-  // ── SERIES SUBMIT ──
-  const submitSeries = async (e) => {
-    e.preventDefault();
-    if (!seriesForm.title.trim()) { setToast({ type: "error", msg: "Title is required" }); return; }
-    setSubmitting(true);
-    try {
-      const payload = {
-        ...seriesForm,
-        release_year: seriesForm.release_year ? parseInt(seriesForm.release_year) : null,
-        access_level: parseInt(seriesForm.access_level) || 1,
-      };
-      const res = await api.post("/admin/content/series", payload, { headers });
-      setCreatedSeries({ content_id: res.data.content_id, series_id: res.data.series_id, title: seriesForm.title });
-      setSeasons([]);
-      setToast({ type: "success", msg: `Series "${seriesForm.title}" created! Now add seasons & episodes.` });
-      fetchDashboard();
-    } catch (e) {
-      setToast({ type: "error", msg: e.response?.data?.message || "Failed to add series" });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // ── ADD SEASON ──
-  const addSeason = async () => {
-    if (!seasonNumber || !createdSeries) return;
-    try {
-      const res = await api.post(`/admin/content/series/${createdSeries.content_id}/season`, { season_number: parseInt(seasonNumber) }, { headers });
-      setSeasons([...seasons, { season_id: res.data.season_id, season_number: parseInt(seasonNumber), episodes: [] }]);
-      setSeasonNumber("");
-      setToast({ type: "success", msg: `Season ${seasonNumber} added` });
-    } catch (e) {
-      setToast({ type: "error", msg: e.response?.data?.message || "Failed to add season" });
-    }
-  };
-
-  // ── ADD EPISODE ──
-  const addEpisode = async () => {
-    const season = seasons[episodeForm.season_idx];
-    if (!season || !episodeForm.episode_number) return;
-    try {
-      const res = await api.post(`/admin/content/season/${season.season_id}/episode`, {
-        episode_number: parseInt(episodeForm.episode_number),
-        title: episodeForm.title || `Episode ${episodeForm.episode_number}`,
-        video_url: episodeForm.video_url || null,
-      }, { headers });
-
-      const updated = [...seasons];
-      updated[episodeForm.season_idx].episodes.push({
-        episode_id: res.data.episode_id,
-        episode_number: parseInt(episodeForm.episode_number),
-        title: episodeForm.title || `Episode ${episodeForm.episode_number}`,
-      });
-      setSeasons(updated);
-      setEpisodeForm({ ...episodeForm, episode_number: "", title: "", video_url: "" });
-      setToast({ type: "success", msg: `Episode ${episodeForm.episode_number} added` });
-    } catch (e) {
-      setToast({ type: "error", msg: e.response?.data?.message || "Failed to add episode" });
-    }
-  };
-
-  const finishSeries = () => {
-    setCreatedSeries(null);
-    setSeasons([]);
-    setSeriesForm({ title: "", description: "", release_year: "", age_rating: "", access_level: "1", thumbnail_url: "" });
-    fetchDashboard();
-  };
 
   return (
     <div className="admin-page">
@@ -211,35 +124,26 @@ function AdminDashboard() {
         ))}
       </div>
 
-      {/* ═══════ OVERVIEW ═══════ */}
       {tab === "overview" && stats && (
         <div className="admin-overview">
           <div className="stats-grid">
             <StatCard label="Total Users" value={stats.totalUsers} icon="👥" />
+            <StatCard label="Premium Users" value={stats.premiumUsers} icon="⭐" />
             <StatCard label="Movies" value={stats.totalMovies} icon="🎬" />
             <StatCard label="Series" value={stats.totalSeries} icon="📺" />
             <StatCard label="Total Content" value={stats.totalContent} icon="🎞️" />
-            <StatCard label="Watchlist Entries" value={stats.totalWatchlistEntries} icon="📋" />
-            <StatCard label="Favorites" value={stats.totalFavorites} icon="❤️" />
-          </div>
-
-          <div className="sync-section">
-            <h3>S3 Content Sync</h3>
-            <p>Scan S3 bucket and auto-populate the database with all discovered movies and episodes.</p>
-            <button className="sync-btn" onClick={syncS3} disabled={syncing}>
-              {syncing ? "Syncing..." : "🔄 Sync S3 → Database"}
-            </button>
-            {syncMsg && <p className="sync-msg">{syncMsg}</p>}
+            <StatCard label="Total Watch Time (hrs)" value={stats.totalWatchTimeHours} icon="⏱️" />
           </div>
         </div>
       )}
 
       {/* ═══════ USERS ═══════ */}
       {tab === "users" && (
-        <div className="admin-table-wrap">
+      <div className="admin-table-wrap">
+          <p style={{ color: '#aaa', fontSize: '13px', marginBottom: '10px' }}>ℹ️ <strong>Deactivate</strong> disables a user's account (they cannot log in). <strong>Activate</strong> re-enables it. This does NOT affect subscription plans.</p>
           <table className="admin-table">
             <thead>
-              <tr><th>Name</th><th>Email</th><th>Joined</th><th>Status</th><th>Action</th></tr>
+              <tr><th>Name</th><th>Email</th><th>Joined</th><th>Plan</th><th>Account Status</th><th>Action</th></tr>
             </thead>
             <tbody>
               {users.map(u => (
@@ -247,10 +151,11 @@ function AdminDashboard() {
                   <td>{u.name}</td>
                   <td>{u.email}</td>
                   <td>{new Date(u.created_at).toLocaleDateString()}</td>
-                  <td><span className={`status-badge ${u.status}`}>{u.status}</span></td>
+                  <td><span className={`type-badge ${u.plan_id === 2 ? 'series' : 'movie'}`}>{u.plan_name || (u.plan_id === 2 ? 'Premium' : 'Basic')}</span></td>
+                  <td><span className={`status-badge ${u.status?.toLowerCase()}`}>{u.status}</span></td>
                   <td>
                     <button className="action-btn" onClick={() => toggleUserStatus(u.user_id, u.status)}>
-                      {u.status === "active" ? "Suspend" : "Activate"}
+                      {u.status?.toUpperCase() === "ACTIVE" ? "Deactivate" : "Activate"}
                     </button>
                   </td>
                 </tr>
@@ -293,7 +198,7 @@ function AdminDashboard() {
         <div className="upload-section">
           {/* Mode toggle */}
           <div className="upload-mode-toggle">
-            <button className={`mode-btn ${uploadMode === "movie" ? "active" : ""}`} onClick={() => { setUploadMode("movie"); setCreatedSeries(null); }}>
+            <button className={`mode-btn ${uploadMode === "movie" ? "active" : ""}`} onClick={() => setUploadMode("movie")}>
               🎬 Add Movie
             </button>
             <button className={`mode-btn ${uploadMode === "series" ? "active" : ""}`} onClick={() => setUploadMode("series")}>
@@ -303,151 +208,12 @@ function AdminDashboard() {
 
           {/* ── MOVIE FORM ── */}
           {uploadMode === "movie" && (
-            <form className="upload-form" onSubmit={submitMovie}>
-              <h3>Add New Movie</h3>
-              <div className="form-grid">
-                <div className="form-group full">
-                  <label>Title *</label>
-                  <input type="text" value={movieForm.title} onChange={e => setMovieForm({...movieForm, title: e.target.value})} placeholder="e.g. The Dark Knight" required />
-                </div>
-                <div className="form-group full">
-                  <label>Description</label>
-                  <textarea value={movieForm.description} onChange={e => setMovieForm({...movieForm, description: e.target.value})} placeholder="Brief synopsis..." rows={3} />
-                </div>
-                <div className="form-group">
-                  <label>Release Year</label>
-                  <input type="number" value={movieForm.release_year} onChange={e => setMovieForm({...movieForm, release_year: e.target.value})} placeholder="2024" min="1900" max="2099" />
-                </div>
-                <div className="form-group">
-                  <label>Age Rating</label>
-                  <input type="text" value={movieForm.age_rating} onChange={e => setMovieForm({...movieForm, age_rating: e.target.value})} placeholder="PG-13, R, etc." />
-                </div>
-                <div className="form-group">
-                  <label>Access Level</label>
-                  <select value={movieForm.access_level} onChange={e => setMovieForm({...movieForm, access_level: e.target.value})}>
-                    <option value="1">Level 1 — Free</option>
-                    <option value="2">Level 2 — Basic</option>
-                    <option value="3">Level 3 — Premium</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Duration (minutes)</label>
-                  <input type="number" value={movieForm.duration} onChange={e => setMovieForm({...movieForm, duration: e.target.value})} placeholder="148" min="1" />
-                </div>
-                <div className="form-group full">
-                  <label>Thumbnail / Poster URL</label>
-                  <input type="url" value={movieForm.thumbnail_url} onChange={e => setMovieForm({...movieForm, thumbnail_url: e.target.value})} placeholder="https://image.tmdb.org/t/p/w500/..." />
-                </div>
-                <div className="form-group full">
-                  <label>S3 Video Key</label>
-                  <input type="text" value={movieForm.video_url} onChange={e => setMovieForm({...movieForm, video_url: e.target.value})} placeholder="movies/the-dark-knight/1080p.mp4" />
-                </div>
-              </div>
-              {movieForm.thumbnail_url && (
-                <div className="thumb-preview">
-                  <img src={movieForm.thumbnail_url} alt="Preview" onError={e => e.target.style.display='none'} />
-                </div>
-              )}
-              <button type="submit" className="submit-btn" disabled={submitting}>
-                {submitting ? "Adding..." : "🎬 Add Movie"}
-              </button>
-            </form>
+            <MovieUploadForm headers={headers} fetchDashboard={fetchDashboard} setToast={setToast} />
           )}
 
           {/* ── SERIES FORM ── */}
-          {uploadMode === "series" && !createdSeries && (
-            <form className="upload-form" onSubmit={submitSeries}>
-              <h3>Add New Series</h3>
-              <div className="form-grid">
-                <div className="form-group full">
-                  <label>Title *</label>
-                  <input type="text" value={seriesForm.title} onChange={e => setSeriesForm({...seriesForm, title: e.target.value})} placeholder="e.g. Breaking Bad" required />
-                </div>
-                <div className="form-group full">
-                  <label>Description</label>
-                  <textarea value={seriesForm.description} onChange={e => setSeriesForm({...seriesForm, description: e.target.value})} placeholder="Brief synopsis..." rows={3} />
-                </div>
-                <div className="form-group">
-                  <label>Release Year</label>
-                  <input type="number" value={seriesForm.release_year} onChange={e => setSeriesForm({...seriesForm, release_year: e.target.value})} placeholder="2024" min="1900" max="2099" />
-                </div>
-                <div className="form-group">
-                  <label>Age Rating</label>
-                  <input type="text" value={seriesForm.age_rating} onChange={e => setSeriesForm({...seriesForm, age_rating: e.target.value})} placeholder="TV-MA, TV-14, etc." />
-                </div>
-                <div className="form-group">
-                  <label>Access Level</label>
-                  <select value={seriesForm.access_level} onChange={e => setSeriesForm({...seriesForm, access_level: e.target.value})}>
-                    <option value="1">Level 1 — Free</option>
-                    <option value="2">Level 2 — Basic</option>
-                    <option value="3">Level 3 — Premium</option>
-                  </select>
-                </div>
-                <div className="form-group full">
-                  <label>Thumbnail / Poster URL</label>
-                  <input type="url" value={seriesForm.thumbnail_url} onChange={e => setSeriesForm({...seriesForm, thumbnail_url: e.target.value})} placeholder="https://image.tmdb.org/t/p/w500/..." />
-                </div>
-              </div>
-              {seriesForm.thumbnail_url && (
-                <div className="thumb-preview">
-                  <img src={seriesForm.thumbnail_url} alt="Preview" onError={e => e.target.style.display='none'} />
-                </div>
-              )}
-              <button type="submit" className="submit-btn" disabled={submitting}>
-                {submitting ? "Creating..." : "📺 Create Series"}
-              </button>
-            </form>
-          )}
-
-          {/* ── SEASON / EPISODE BUILDER ── */}
-          {uploadMode === "series" && createdSeries && (
-            <div className="upload-form season-builder">
-              <div className="series-header-row">
-                <h3>📺 {createdSeries.title} — Seasons & Episodes</h3>
-                <button className="finish-btn" onClick={finishSeries}>✓ Finish</button>
-              </div>
-
-              {/* Add Season */}
-              <div className="inline-add">
-                <label>Add Season:</label>
-                <input type="number" value={seasonNumber} onChange={e => setSeasonNumber(e.target.value)} placeholder="Season #" min="1" className="small-input" />
-                <button className="add-btn" onClick={addSeason} type="button">+ Add Season</button>
-              </div>
-
-              {/* Existing Seasons */}
-              {seasons.length > 0 && (
-                <div className="seasons-list">
-                  {seasons.map((s, idx) => (
-                    <div key={s.season_id} className="season-card">
-                      <h4>Season {s.season_number}</h4>
-                      {s.episodes.length > 0 && (
-                        <ul className="episode-list">
-                          {s.episodes.map(ep => (
-                            <li key={ep.episode_id}>Ep {ep.episode_number}: {ep.title}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {/* Add episode row */}
-                      <div className="inline-add ep-add">
-                        <input type="number" placeholder="Ep #" min="1" className="small-input"
-                          value={episodeForm.season_idx === idx ? episodeForm.episode_number : ""}
-                          onFocus={() => setEpisodeForm({...episodeForm, season_idx: idx})}
-                          onChange={e => setEpisodeForm({...episodeForm, season_idx: idx, episode_number: e.target.value})} />
-                        <input type="text" placeholder="Episode title" className="med-input"
-                          value={episodeForm.season_idx === idx ? episodeForm.title : ""}
-                          onFocus={() => setEpisodeForm({...episodeForm, season_idx: idx})}
-                          onChange={e => setEpisodeForm({...episodeForm, season_idx: idx, title: e.target.value})} />
-                        <input type="text" placeholder="S3 key (optional)" className="med-input"
-                          value={episodeForm.season_idx === idx ? episodeForm.video_url : ""}
-                          onFocus={() => setEpisodeForm({...episodeForm, season_idx: idx})}
-                          onChange={e => setEpisodeForm({...episodeForm, season_idx: idx, video_url: e.target.value})} />
-                        <button className="add-btn" onClick={() => { setEpisodeForm({...episodeForm, season_idx: idx}); addEpisode(); }} type="button">+ Episode</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+          {uploadMode === "series" && (
+            <SeriesUploadForm headers={headers} fetchDashboard={fetchDashboard} setToast={setToast} />
           )}
         </div>
       )}

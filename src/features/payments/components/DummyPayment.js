@@ -1,36 +1,49 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../../config/api";
+import { AuthContext } from "../../auth/AuthContext";
 import "./DummyPayment.css";
 
 function DummyPayment() {
   const navigate = useNavigate();
+  const { user, login } = useContext(AuthContext);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
   const handlePayment = async (planId, amount) => {
     const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-      return;
-    }
+    if (!token) { navigate("/login"); return; }
 
     setLoading(true);
     setError("");
 
     try {
-      await api.post(
+      const response = await api.post(
         "/user/pay",
         { plan_id: planId, amount },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+
+      const newToken = response.data.token;
+      const newPlanId = response.data.plan_id;
+
+      // Decode the new token to get fresh user data
+      const base64Payload = newToken.split('.')[1];
+      const decoded = JSON.parse(atob(base64Payload));
+      const updatedUser = {
+        id: decoded.id,
+        email: decoded.email,
+        role: decoded.role,
+        plan_id: newPlanId ?? decoded.plan_id,
+      };
+      login(updatedUser, newToken);
+
       setSuccess(true);
-      setTimeout(() => {
-        navigate("/");
-      }, 2000);
+      setTimeout(() => navigate("/"), 2000);
     } catch (err) {
-      setError("Payment failed. Please try again.");
+      console.error("Payment error:", err.response?.data || err.message);
+      setError(err.response?.data?.message || "Payment failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -59,27 +72,21 @@ function DummyPayment() {
           <div className="plan-item">
             <h3>Premium Plan</h3>
             <p className="price">$9.99 / month</p>
+            <ul style={{ textAlign: 'left', marginBottom: '15px', color: '#ccc', fontSize: '14px', listStyle: 'none', padding: 0 }}>
+                <li>✓ 4K Ultra HD Quality</li>
+                <li>✓ Unlock Premium Movies & Shows</li>
+                <li>✓ Watch on 4 devices at once</li>
+            </ul>
             <button 
               className="pay-btn" 
-              onClick={() => handlePayment(3, 9.99)}
+              onClick={() => handlePayment(2, 9.99)}
               disabled={loading}
             >
               {loading ? "Processing..." : "Pay $9.99"}
             </button>
           </div>
-          <div className="plan-item">
-            <h3>Basic Plan</h3>
-            <p className="price">$4.99 / month</p>
-            <button 
-              className="pay-btn basic-btn" 
-              onClick={() => handlePayment(2, 4.99)}
-              disabled={loading}
-            >
-              {loading ? "Processing..." : "Pay $4.99"}
-            </button>
-          </div>
         </div>
-        <button className="back-btn-text" onClick={() => navigate("/")}>Cancel</button>
+        <button className="back-btn-text" onClick={() => navigate("/")}>Cancel & Return Home</button>
       </div>
     </div>
   );

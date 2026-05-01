@@ -53,7 +53,8 @@ router.get('/:contentId/catalog', verifyToken, async (req, res) => {
                 year: content.year,
                 rating: content.rating,
                 image: await resolveImage({ image: content.image, title: content.title }),
-                duration: content.duration ? `${Math.floor(content.duration/60)}h ${content.duration%60}m` : null
+                duration: content.duration ? `${Math.floor(content.duration/60)}h ${content.duration%60}m` : null,
+                accessLevel: content.access_level
             });
         }
 
@@ -108,6 +109,7 @@ router.get('/:contentId/catalog', verifyToken, async (req, res) => {
             rating: content.rating,
             image: await resolveImage({ image: content.image, title: content.title }),
             seasons: Array.from(seasonsMap.values()),
+            accessLevel: content.access_level
         });
     } catch (err) {
         console.error('Failed to fetch content catalog:', err);
@@ -141,6 +143,7 @@ router.get('/catalog/all', verifyToken, async (req, res) => {
                 c.content_type as type, 
                 c.thumbnail_url as image,
                 c.age_rating as rating,
+                c.access_level,
                 m.duration as duration,
                 (SELECT COUNT(DISTINCT se.season_number) FROM seasons se JOIN series s ON se.series_id = s.series_id WHERE s.content_id = c.content_id) as seasons
             FROM content c
@@ -157,7 +160,8 @@ router.get('/catalog/all', verifyToken, async (req, res) => {
             rating: r.rating || 0,
             image: await resolveImage(r),
             duration: r.duration ? `${Math.floor(r.duration/60)}h ${r.duration%60}m` : null,
-            seasons: parseInt(r.seasons) > 0 ? `${r.seasons} Seasons` : null
+            seasons: parseInt(r.seasons) > 0 ? `${r.seasons} Seasons` : null,
+            accessLevel: r.access_level
         })));
         
         const movies = mapped.filter(r => r.type === 'movie');
@@ -300,6 +304,70 @@ router.get('/:contentId/stream', verifyToken, async (req, res) => {
     } catch (err) {
         console.error('Failed to generate signed video URL:', err);
         return res.status(500).json({ message: 'Failed to generate video stream URL' });
+    }
+});
+
+// GET /api/videos/:contentId/reviews
+router.get('/:contentId/reviews', verifyToken, async (req, res) => {
+    const contentId = parsePositiveInt(req.params.contentId);
+    if (!contentId) return res.status(404).json({ message: 'Content not found' });
+
+    try {
+        const result = await db.query(`
+            SELECT r.review_id, r.rating, r.comment, r.created_at, u.name as user_name
+            FROM reviews r
+            JOIN users u ON r.user_id = u.user_id
+            WHERE r.content_id = $1
+            ORDER BY r.created_at DESC
+        `, [contentId]);
+
+        const avgResult = await db.query(`
+            SELECT ROUND(AVG(rating), 1) as avg_rating, COUNT(*) as total_reviews
+            FROM reviews
+            WHERE content_id = $1
+        `, [contentId]);
+
+        return res.json({
+            reviews: result.rows,
+            avgRating: parseFloat(avgResult.rows[0].avg_rating) || 0,
+            totalReviews: parseInt(avgResult.rows[0].total_reviews) || 0
+        });
+    } catch (err) {
+        console.error('Failed to fetch reviews:', err);
+        return res.status(500).json({ message: 'Failed to fetch reviews' });
+    }
+});
+
+// POST /api/videos/:contentId/reviews
+router.post('/:contentId/reviews', verifyToken, async (req, res) => {
+    const contentId = parsePositiveInt(req.params.contentId);
+    const { rating, comment } = req.body;
+    
+    if (!contentId) return res.status(404).json({ message: 'Content not found' });
+    if (!rating || rating < 1 || rating > 5) return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+
+    try {
+        // Check if user watched the content
+        const cw = await db.query(`
+            SELECT 1 FROM continue_watching WHERE user_id = $1 AND content_id = $2 AND progress_seconds > 0
+        `, [req.user.id, contentId]);
+
+        if (cw.rows.length === 0 && req.user.role !== 'admin') {
+            return res.status(403).json({ message: 'You must watch this content before reviewing it.' });
+        }
+
+        // Insert or update review
+        await db.query(`
+            INSERT INTO reviews (user_id, content_id, rating, comment, created_at)
+            VALUES ($1, $2, $3, $4, NOW())
+            ON CONFLICT (user_id, content_id) DO UPDATE SET
+                rating = $3, comment = $4, created_at = NOW()
+        `, [req.user.id, contentId, rating, comment || null]);
+
+        return res.json({ success: true, message: 'Review submitted' });
+    } catch (err) {
+        console.error('Failed to submit review:', err);
+        return res.status(500).json({ message: 'Failed to submit review' });
     }
 });
 

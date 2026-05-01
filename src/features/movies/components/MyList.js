@@ -110,6 +110,7 @@ function MyList() {
             <div key={item.id} style={{ position: "relative" }}>
               <div className="movie-card" onClick={() => navigate(`/movie/${item.id}`)} style={{ cursor: "pointer" }}>
                 <img src={item.image} alt={item.title} referrerPolicy="no-referrer" style={{ width: "100%", borderRadius: "8px", display: "block" }} />
+                {item.accessLevel > 1 && <div className="premium-badge">🔒 Premium</div>}
                 <div className="movie-overlay"><h3>{item.title}</h3></div>
               </div>
               <button
