@@ -6,7 +6,7 @@ import "./DummyPayment.css";
 
 function DummyPayment() {
   const navigate = useNavigate();
-  const { user, login } = useContext(AuthContext);
+  const { login } = useContext(AuthContext);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
